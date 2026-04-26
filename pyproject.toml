@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crypto-asset-tracker"
+version = "0.1.0"
+description = "加密資產總覽工具 — 支援中心化交易所、EVM/BTC 冷錢包、DeFi 持倉、Telegram 機器人"
+requires-python = ">=3.11"
+dependencies = [
+    "ccxt==4.3.89",
+    "web3>=7.0.0",
+    "rich==13.7.1",
+    "python-dotenv==1.0.1",
+    "requests==2.32.3",
+    "PyYAML==6.0.2",
+    "playwright>=1.40.0",
+    "python-telegram-bot>=21.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]

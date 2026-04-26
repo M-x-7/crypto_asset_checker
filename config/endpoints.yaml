@@ -1,0 +1,37 @@
+# 第三方服務節點與 API 端點 — 在此手動切換供應商
+# -------------------------------------------------------
+
+services:
+  # 匯率 API（USD → TWD）
+  fx_rate_url: "https://open.er-api.com/v6/latest/USD"
+
+  # BTC 鏈上查詢
+  btc_explorer_url: "https://blockstream.info/api/address/{}"
+  # 備用：https://mempool.space/api/address/{}
+
+  # OKX Web3 Portfolio（瀏覽器爬蟲）
+  okx_portfolio_url: "https://web3.okx.com/zh-hant/portfolio/{}/analysis"
+
+# -------------------------------------------------------
+# EVM 鏈 RPC 節點
+# 可透過環境變數（env_rpc）覆蓋為 Infura / Alchemy 私有節點
+# -------------------------------------------------------
+
+chains:
+  ethereum:
+    name: Ethereum
+    symbol: ETH
+    rpc: https://ethereum.publicnode.com
+    env_rpc: ETH_RPC_URL
+
+  bsc:
+    name: BNB Chain
+    symbol: BNB
+    rpc: https://bsc.publicnode.com
+    env_rpc: BSC_RPC_URL
+
+  polygon:
+    name: Polygon
+    symbol: MATIC
+    rpc: https://polygon-bor.publicnode.com
+    env_rpc: POLYGON_RPC_URL
