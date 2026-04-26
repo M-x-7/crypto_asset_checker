@@ -129,14 +129,15 @@ def _defi_table(protocols: list[dict], total_usd: float) -> str:
     for p in protocols:
         first = True
         for item in p.get("items", []):
-            visible = [t for t in item["tokens"] if t["amount"] > 0][:4]
-            token_str = "<br>".join(f"{_esc(t['symbol'])} {t['amount']:.4f}" for t in visible) or "—"
-            proto_cell = f'<td class="dt-protocol">{_esc(p["protocol"])}</td>' if first else '<td class="dt-protocol"></td>'
+            visible = [t for t in item.get("tokens", []) if t.get("amount", 0) > 0][:4]
+            token_str = "<br>".join(f"{_esc(t['symbol'])} {t.get('amount', 0):.4f}" for t in visible) or "—"
+            proto_cell = f'<td class="dt-protocol">{_esc(p.get("protocol", ""))}</td>' if first else '<td class="dt-protocol"></td>'
+            item_usd = item.get("usd_value", 0)
             rows += f"""<tr>
               {proto_cell}
-              <td class="dt-type">{_esc(item["name"])}</td>
+              <td class="dt-type">{_esc(item.get("name", ""))}</td>
               <td class="dt-tokens">{token_str}</td>
-              <td class="dt-usd">{_fmt_usd(item["usd_value"])}</td>
+              <td class="dt-usd">{_fmt_usd(item_usd)}</td>
             </tr>"""
             first = False
     return f"""<div class="defi-block">
@@ -159,13 +160,13 @@ def _defi_table(protocols: list[dict], total_usd: float) -> str:
 def _token_block(tokens: list[dict], twd_rate: float) -> str:
     if not tokens:
         return ""
-    total_usd = sum(t["usd_value"] for t in tokens)
+    total_usd = sum(t.get("usd_value", 0) for t in tokens)
     main_rows = ""
     small_rows = ""
     small_count = 0
 
     for t in tokens:
-        usd = t["usd_value"]
+        usd = t.get("usd_value", 0)
         row = f"""<tr>
           <td class="ct-chain">{_esc(t["chain"])}</td>
           <td class="ct-symbol">{_esc(t["symbol"])}</td>
@@ -220,9 +221,9 @@ def _evm_section(wallet_data: list[dict], twd_rate: float, full_addr: bool = Fal
         chain_results = w.get("chain_results", [])
         defi = w.get("defi_protocols", [])
         tokens = w.get("tokens", [])
-        evm_usd = sum(r.get("usd", 0) for r in chain_results if r.get("usd"))
-        defi_usd = sum(p["net_usd_value"] for p in defi)
-        token_usd = sum(t["usd_value"] for t in tokens)
+        evm_usd = sum(r.get("usd", 0) for r in chain_results)
+        defi_usd = sum(p.get("net_usd_value", 0) for p in defi)
+        token_usd = sum(t.get("usd_value", 0) for t in tokens)
         total = evm_usd + defi_usd + token_usd
 
         chain_html = _chain_table(chain_results)
@@ -639,7 +640,7 @@ def build_summary_html(snapshot: dict) -> str:
         addr = w["address"]
         short = f"{addr[:6]}...{addr[-4:]}"
         evm_usd = sum(r.get("usd", 0) for r in w.get("chain_results", []))
-        defi_usd = sum(p["net_usd_value"] for p in w.get("defi_protocols", []))
+        defi_usd = sum(p.get("net_usd_value", 0) for p in w.get("defi_protocols", []))
         total = evm_usd + defi_usd
         rows_html += f"""
         <div class="row">

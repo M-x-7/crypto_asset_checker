@@ -116,7 +116,7 @@ def render_token_balances(address: str, tokens: list[dict], twd_rate: float | No
     if not tokens:
         return
     short_addr = f"{address[:6]}...{address[-4:]}"
-    total_usd = sum(t["usd_value"] for t in tokens)
+    total_usd = sum(t.get("usd_value", 0) for t in tokens)
 
     table = Table(title=f"ERC-20 代幣  {short_addr}", box=box.ROUNDED, show_lines=False)
     table.add_column("鏈", style="cyan", min_width=12)
@@ -127,10 +127,11 @@ def render_token_balances(address: str, tokens: list[dict], twd_rate: float | No
         table.add_column("≈ TWD", justify="right", min_width=14)
 
     for t in tokens:
-        usd_str = f"${t['usd_value']:,.2f}"
+        usd_val = t.get("usd_value", 0)
+        usd_str = f"${usd_val:,.2f}"
         row = [t["chain"], t["symbol"], f"{t['balance']:.6f}", usd_str]
         if twd_rate:
-            row.append(f"NT${t['usd_value'] * twd_rate:,.0f}")
+            row.append(f"NT${usd_val * twd_rate:,.0f}")
         table.add_row(*row)
 
     table.add_section()
@@ -147,7 +148,7 @@ def render_defi_positions(address: str, protocols: list[dict], twd_rate: float |
         return
 
     short_addr = f"{address[:6]}...{address[-4:]}"
-    total_usd = sum(p["net_usd_value"] for p in protocols)
+    total_usd = sum(p.get("net_usd_value", 0) for p in protocols)
 
     table = Table(title=f"DeFi 持倉  {short_addr}", box=box.ROUNDED, show_lines=False)
     table.add_column("協議", style="cyan", min_width=16)
@@ -159,16 +160,17 @@ def render_defi_positions(address: str, protocols: list[dict], twd_rate: float |
 
     for p in protocols:
         first = True
-        for item in p["items"]:
-            visible = [t for t in item["tokens"] if t["amount"] > 0]
+        for item in p.get("items", []):
+            visible = [t for t in item.get("tokens", []) if t.get("amount", 0) > 0]
             parts = [f"{t['symbol']} {t['amount']:.4f}" for t in visible[:_MAX_TOKENS_PER_ROW]]
             if len(visible) > _MAX_TOKENS_PER_ROW:
                 parts.append(f"+{len(visible) - _MAX_TOKENS_PER_ROW} 更多")
             token_str = "  ".join(parts) or "—"
 
-            usd_str = f"${item['usd_value']:,.2f}"
-            twd_str = f"NT${item['usd_value'] * twd_rate:,.0f}" if twd_rate else None
-            row = [p["protocol"] if first else "", item["name"], token_str, usd_str]
+            item_usd = item.get("usd_value", 0)
+            usd_str = f"${item_usd:,.2f}"
+            twd_str = f"NT${item_usd * twd_rate:,.0f}" if twd_rate else None
+            row = [p.get("protocol", "") if first else "", item.get("name", ""), token_str, usd_str]
             if twd_rate:
                 row.append(twd_str)
             table.add_row(*row)

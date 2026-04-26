@@ -158,8 +158,8 @@ def collect_snapshot(
                 tokens: list[dict] = wallet_data.get("tokens", [])
 
                 wallet_usd = sum(r.get("usd", 0) for r in chain_results)
-                defi_usd = sum(p["net_usd_value"] for p in protocols)
-                token_usd = sum(t["usd_value"] for t in tokens)
+                defi_usd = sum(p.get("net_usd_value", 0) for p in protocols)
+                token_usd = sum(t.get("usd_value", 0) for t in tokens)
                 snapshot["grand_total_usd"] += wallet_usd + defi_usd + token_usd
                 snapshot["evm_wallets"].append({
                     "address": checksum,
