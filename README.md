@@ -1,4 +1,4 @@
-# crypto 資產查詢
+# crypto 資產估值快速查詢
 
 加密資產總覽工具，支援中心化交易所（Binance、OKX）、EVM 多鏈冷錢包、BTC 冷錢包、DeFi 持倉，並可透過 Telegram Bot 隨時查詢。
 
@@ -7,7 +7,7 @@
 ## 功能
 
 - **交易所餘額**：Binance、OKX，含 Spot、Earn 子帳戶，USD / TWD 估值
-- **EVM 冷錢包**：Ethereum、BNB Chain、Polygon 原生幣餘額
+- **EVM 冷錢包**：Ethereum、BNB Chain、Polygon 原生幣 + ERC-20 代幣餘額（USD 估值，< $1 自動折疊）
 - **BTC 冷錢包**：支援 P2PKH（`1...`）、P2SH（`3...`）、Bech32（`bc1...`）
 - **DeFi 持倉**：透過 OKX Web3 Portfolio 爬蟲取得持倉明細
 - **HTML 報告**：深色主題、手機友善，可匯出摘要 PNG + 完整明細 HTML
@@ -32,12 +32,6 @@ setup.bat
 # Linux / macOS
 bash setup.sh
 ```
-
-腳本會自動：
-1. 建立 `.venv` 虛擬環境
-2. 安裝所有相依套件
-3. 下載 Playwright Chromium（用於 DeFi 持倉爬蟲與 PNG 截圖）
-
 ---
 
 ## 設定
@@ -57,6 +51,7 @@ cp .env.example .env
 | `EVM_WALLET` | EVM 錢包地址，多個以逗號分隔 |
 | `BTC_WALLET` | BTC 錢包地址，多個以逗號分隔 |
 | `ETH_RPC_URL` / `BSC_RPC_URL` / `POLYGON_RPC_URL` | 自訂 RPC 節點（選填，不填使用免費公共節點） |
+| `ANKR_API_KEY` | Ankr API 金鑰（選填，不填仍可查詢，設定後提高速率上限） |
 | `TELEGRAM_BOT_TOKEN` | Telegram Bot Token（從 @BotFather 取得） |
 | `TELEGRAM_ALLOWED_CHAT_IDS` | 限制可使用 Bot 的 Chat ID，留空表示不限制 |
 

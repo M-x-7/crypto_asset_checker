@@ -156,6 +156,62 @@ def _defi_table(protocols: list[dict], total_usd: float) -> str:
     </div>"""
 
 
+def _token_block(tokens: list[dict], twd_rate: float) -> str:
+    if not tokens:
+        return ""
+    total_usd = sum(t["usd_value"] for t in tokens)
+    main_rows = ""
+    small_rows = ""
+    small_count = 0
+
+    for t in tokens:
+        usd = t["usd_value"]
+        row = f"""<tr>
+          <td class="ct-chain">{_esc(t["chain"])}</td>
+          <td class="ct-symbol">{_esc(t["symbol"])}</td>
+          <td class="ct-amount">{_fmt_num(t["balance"], 4)}</td>
+          <td class="ct-usd">{_fmt_usd(usd) if usd else "—"}</td>
+        </tr>"""
+        if usd >= 1.0:
+            main_rows += row
+        else:
+            small_rows += row
+            small_count += 1
+
+    small_html = ""
+    if small_rows:
+        small_html = f"""
+      <details class="small-assets">
+        <summary>小額代幣（{small_count} 種）</summary>
+        <div class="table-wrap"><table class="ct">
+          <thead><tr>
+            <th class="ct-chain">鏈</th><th class="ct-symbol">代幣</th>
+            <th class="ct-amount">數量</th><th class="ct-usd">≈ USD</th>
+          </tr></thead>
+          <tbody>{small_rows}</tbody>
+        </table></div>
+      </details>"""
+
+    main_html = ""
+    if main_rows:
+        main_html = f"""<div class="table-wrap"><table class="ct">
+          <thead><tr>
+            <th class="ct-chain">鏈</th><th class="ct-symbol">代幣</th>
+            <th class="ct-amount">數量</th><th class="ct-usd">≈ USD</th>
+          </tr></thead>
+          <tbody>{main_rows}</tbody>
+        </table></div>"""
+
+    return f"""<div class="token-block">
+      <div class="token-header">
+        <span class="token-label">ERC-20 代幣</span>
+        <span class="token-total">{_fmt_usd(total_usd)}</span>
+      </div>
+      {main_html}
+      {small_html}
+    </div>"""
+
+
 def _evm_section(wallet_data: list[dict], twd_rate: float, full_addr: bool = False) -> str:
     html = ""
     for w in wallet_data:
@@ -163,11 +219,14 @@ def _evm_section(wallet_data: list[dict], twd_rate: float, full_addr: bool = Fal
         display_addr = addr if full_addr else f"{addr[:6]}...{addr[-4:]}"
         chain_results = w.get("chain_results", [])
         defi = w.get("defi_protocols", [])
+        tokens = w.get("tokens", [])
         evm_usd = sum(r.get("usd", 0) for r in chain_results if r.get("usd"))
         defi_usd = sum(p["net_usd_value"] for p in defi)
-        total = evm_usd + defi_usd
+        token_usd = sum(t["usd_value"] for t in tokens)
+        total = evm_usd + defi_usd + token_usd
 
         chain_html = _chain_table(chain_results)
+        token_html = _token_block(tokens, twd_rate)
         defi_html = _defi_table(defi, defi_usd) if defi else ""
 
         html += f"""
@@ -177,6 +236,7 @@ def _evm_section(wallet_data: list[dict], twd_rate: float, full_addr: bool = Fal
             <span class="wallet-total">{_fmt_usd(total)} / {_fmt_twd(total, twd_rate)}</span>
           </div>
           {chain_html}
+          {token_html}
           {defi_html}
         </div>"""
     return html
@@ -371,6 +431,17 @@ def build_html(snapshot: dict) -> str:
   .ct-usd    {{ font-variant-numeric: tabular-nums; color: #cbd5e1; font-size: 12px;
                 text-align: right; white-space: nowrap; }}
   .ct th.ct-usd {{ text-align: right; }}
+
+  /* ── ERC-20 token block ── */
+  .token-block {{ margin-top: 14px; padding-top: 12px; border-top: 1px solid #1a2333; }}
+  .token-header {{
+    display: flex; justify-content: space-between; align-items: center;
+    flex-wrap: wrap; gap: 6px;
+    margin-bottom: 8px; padding: 0 4px;
+  }}
+  .token-label {{ font-size: 11px; font-weight: 700; color: #60a5fa;
+                  text-transform: uppercase; letter-spacing: 0.05em; }}
+  .token-total {{ font-size: 13px; font-weight: 600; color: #34d399; }}
 
   /* ── DeFi block & table (.dt) ── */
   .defi-block {{ margin-top: 14px; padding-top: 12px; border-top: 1px solid #1a2333; }}

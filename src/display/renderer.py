@@ -112,6 +112,35 @@ def render_wallet_balances(
     console.print(table)
 
 
+def render_token_balances(address: str, tokens: list[dict], twd_rate: float | None = None) -> None:
+    if not tokens:
+        return
+    short_addr = f"{address[:6]}...{address[-4:]}"
+    total_usd = sum(t["usd_value"] for t in tokens)
+
+    table = Table(title=f"ERC-20 代幣  {short_addr}", box=box.ROUNDED, show_lines=False)
+    table.add_column("鏈", style="cyan", min_width=12)
+    table.add_column("代幣", style="white", min_width=8)
+    table.add_column("數量", justify="right", min_width=18)
+    table.add_column("≈ USD", justify="right", min_width=14)
+    if twd_rate:
+        table.add_column("≈ TWD", justify="right", min_width=14)
+
+    for t in tokens:
+        usd_str = f"${t['usd_value']:,.2f}"
+        row = [t["chain"], t["symbol"], f"{t['balance']:.6f}", usd_str]
+        if twd_rate:
+            row.append(f"NT${t['usd_value'] * twd_rate:,.0f}")
+        table.add_row(*row)
+
+    table.add_section()
+    total_row = ["[bold]總計[/bold]", "", "", f"[bold green]${total_usd:,.2f}[/bold green]"]
+    if twd_rate:
+        total_row.append(f"[bold green]NT${total_usd * twd_rate:,.0f}[/bold green]")
+    table.add_row(*total_row)
+    console.print(table)
+
+
 def render_defi_positions(address: str, protocols: list[dict], twd_rate: float | None = None) -> None:
     if not protocols:
         console.print("[dim]無 DeFi 持倉[/dim]")

@@ -12,18 +12,26 @@ _DEFI_WAIT_MS = 3000
 _SECTION_LABELS = {"機槍池", "流動池", "質押", "借貸", "收益農場", "保險庫", "存款", "鎖倉", "借出", "借入"}
 _TABLE_HEADERS = {"投資品", "資產", "可領取收益", "總價值"}
 _MIN_USD_VALUE = 0.01
+# Known chain display names on OKX Portfolio page
+_CHAIN_DISPLAY = {
+    "Ethereum", "BNB Chain", "Polygon", "Arbitrum One", "Optimism",
+    "Avalanche C-Chain", "Base", "Fantom", "Cronos", "Solana",
+    "zkSync Era", "Linea", "Scroll", "Mantle",
+}
 # Compiled regexes (cached at module level)
 _RE_PROTOCOL = re.compile(r"^(.+?)\s*·\s*(\$[\d,.<]+)$")
 _RE_TOKEN_ROW = re.compile(r"^([\d.]+)\s+([A-Za-z][A-Za-z0-9.]{1,15})$")
 _RE_USD = re.compile(r"^\$[\d,.<]+$")
+_RE_AMOUNT = re.compile(r"^[\d,]+\.?\d*$")
+_RE_SYMBOL = re.compile(r"^[A-Za-z][A-Za-z0-9.]{1,19}$")
 
 
-def scrape_defi_positions_batch(addresses: list[str]) -> dict[str, list[dict]]:
+def scrape_defi_positions_batch(addresses: list[str]) -> dict[str, dict]:
     """
-    Scrape DeFi positions for multiple addresses in a single browser session.
-    Returns {address: [protocol, ...]}
+    Scrape DeFi positions + token balances for multiple addresses in one browser session.
+    Returns {address: {"protocols": [...], "tokens": [...]}}
     """
-    results: dict[str, list[dict]] = {}
+    results: dict[str, dict] = {}
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         try:
@@ -34,13 +42,8 @@ def scrape_defi_positions_batch(addresses: list[str]) -> dict[str, list[dict]]:
     return results
 
 
-def scrape_defi_positions(address: str) -> list[dict]:
-    """Scrape DeFi positions for a single address."""
-    results = scrape_defi_positions_batch([address])
-    return results.get(address, [])
-
-
-def _scrape_one(browser: Browser, address: str) -> list[dict]:
+def _scrape_one(browser: Browser, address: str) -> dict:
+    """Returns {"protocols": [...], "tokens": [...]}"""
     url = get_service("okx_portfolio_url").format(address)
     page = browser.new_page(viewport={"width": 1440, "height": 900})
     try:
@@ -49,11 +52,25 @@ def _scrape_one(browser: Browser, address: str) -> list[dict]:
             page.wait_for_selector("[class*=assetAmount]", timeout=_SELECTOR_TIMEOUT)
         except PWTimeout:
             _log.warning("OKX portfolio 頁面載入逾時: %s", address[:10])
-            return []
+            return {"protocols": [], "tokens": []}
 
         page.locator('.dashboard-tabs-pane:has-text("資產組合")').click()
         page.wait_for_timeout(2000)
 
+        # Extract token balances from default (代幣) tab before switching to DeFi
+        tokens: list[dict] = []
+        try:
+            page.locator('.dashboard-tabs-pane-segmented:has-text("代幣")').click()
+            page.wait_for_timeout(1500)
+            tokens = _extract_tokens(page)
+        except Exception as e:
+            _log.debug("代幣頁解析失敗，嘗試直接從當前頁面擷取: %s", e)
+            try:
+                tokens = _extract_tokens(page)
+            except Exception:
+                pass
+
+        # Switch to DeFi tab
         page.locator('.dashboard-tabs-pane-segmented:has-text("DeFi")').click()
         page.wait_for_timeout(_DEFI_WAIT_MS)
 
@@ -65,7 +82,8 @@ def _scrape_one(browser: Browser, address: str) -> list[dict]:
         page.evaluate("window.scrollTo(0, 300)")
         page.wait_for_timeout(500)
 
-        return _extract_protocols(page)
+        protocols = _extract_protocols(page)
+        return {"protocols": protocols, "tokens": tokens}
     finally:
         page.close()
 
@@ -77,6 +95,51 @@ def _parse_usd(text: str) -> float:
         return float(text)
     except ValueError:
         return 0.0
+
+
+def _extract_tokens(page) -> list[dict]:
+    """
+    Parse wallet token balances from the OKX Portfolio token tab.
+    Expected text pattern per token: chain_name → symbol → amount → $usd
+    """
+    body = page.inner_text("body")
+    lines = [l.strip() for l in body.split("\n") if l.strip()]
+
+    tokens: list[dict] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line not in _CHAIN_DISPLAY:
+            i += 1
+            continue
+        chain = line
+        # Look ahead for: symbol, amount, usd  (within 4 lines)
+        for offset in range(1, 5):
+            if i + offset + 2 >= len(lines):
+                break
+            sym_line = lines[i + offset]
+            amt_line = lines[i + offset + 1]
+            usd_line = lines[i + offset + 2]
+            if (
+                _RE_SYMBOL.match(sym_line)
+                and _RE_AMOUNT.match(amt_line.replace(",", ""))
+                and _RE_USD.match(usd_line)
+            ):
+                usd = _parse_usd(usd_line)
+                if usd >= _MIN_USD_VALUE:
+                    tokens.append({
+                        "chain": chain,
+                        "symbol": sym_line,
+                        "name": sym_line,
+                        "balance": float(amt_line.replace(",", "")),
+                        "usd_value": usd,
+                    })
+                i += offset + 3
+                break
+        else:
+            i += 1
+
+    return sorted(tokens, key=lambda x: x["usd_value"], reverse=True)
 
 
 def _extract_protocols(page) -> list[dict]:

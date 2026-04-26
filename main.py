@@ -28,6 +28,7 @@ from src.display.renderer import (
     render_btc_balances,
     render_defi_positions,
     render_exchange_balances,
+    render_token_balances,
     render_wallet_balances,
 )
 from src.exchanges.client import get_all_balances, get_exchange_instance
@@ -128,16 +129,16 @@ def collect_snapshot(
                 console.print(f"[red]{e}[/red]")
 
         if checksums:
-            defi_map: dict[str, list[dict]] = {}
-            with console.status("[cyan]查詢 DeFi 持倉（啟動瀏覽器）...[/cyan]"):
+            scraped: dict[str, dict] = {}
+            with console.status("[cyan]查詢代幣與 DeFi 持倉（啟動瀏覽器）...[/cyan]"):
                 try:
-                    defi_map = scrape_defi_positions_batch(checksums)
+                    scraped = scrape_defi_positions_batch(checksums)
                     for checksum in checksums:
-                        if not defi_map.get(checksum):
+                        if not scraped.get(checksum, {}).get("protocols"):
                             if okx_defi_configured():
-                                defi_map[checksum] = okx_get_defi(checksum)
+                                scraped.setdefault(checksum, {})["protocols"] = okx_get_defi(checksum)
                 except Exception as e:
-                    console.print(f"[red]DeFi 查詢失敗: {e}[/red]")
+                    console.print(f"[red]OKX Portfolio 查詢失敗: {e}[/red]")
 
             for checksum in checksums:
                 if chain:
@@ -152,15 +153,20 @@ def collect_snapshot(
                     if r.get("balance") and evm_prices.get(r["symbol"]):
                         r["usd"] = r["balance"] * evm_prices[r["symbol"]]
 
-                protocols = defi_map.get(checksum, [])
+                wallet_data = scraped.get(checksum, {})
+                protocols = wallet_data.get("protocols", [])
+                tokens: list[dict] = wallet_data.get("tokens", [])
+
                 wallet_usd = sum(r.get("usd", 0) for r in chain_results)
                 defi_usd = sum(p["net_usd_value"] for p in protocols)
-                snapshot["grand_total_usd"] += wallet_usd + defi_usd
+                token_usd = sum(t["usd_value"] for t in tokens)
+                snapshot["grand_total_usd"] += wallet_usd + defi_usd + token_usd
                 snapshot["evm_wallets"].append({
                     "address": checksum,
                     "chain_results": chain_results,
                     "defi_protocols": protocols,
                     "evm_prices": evm_prices,
+                    "tokens": tokens,
                 })
 
     # --- BTC wallets ---
@@ -196,6 +202,9 @@ def render_snapshot_terminal(snapshot: dict) -> None:
         evm_prices = w.get("evm_prices", {})
         console.print()
         render_wallet_balances(w["address"], w["chain_results"], evm_prices, twd_rate)
+        if w.get("tokens"):
+            console.print()
+            render_token_balances(w["address"], w["tokens"], twd_rate)
         console.print()
         render_defi_positions(w["address"], w["defi_protocols"], twd_rate)
 
