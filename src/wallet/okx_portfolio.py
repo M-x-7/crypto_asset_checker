@@ -26,6 +26,23 @@ _RE_AMOUNT = re.compile(r"^[\d,]+\.?\d*$")
 _RE_SYMBOL = re.compile(r"^[A-Za-z][A-Za-z0-9.]{1,19}$")
 
 
+_BLOCK_TYPES = {"image", "media", "font", "other"}
+_BROWSER_ARGS = [
+    "--disable-extensions",
+    "--disable-default-apps",
+    "--disable-background-networking",
+    "--disable-sync",
+    "--disable-translate",
+    "--disable-plugins",
+    "--no-first-run",
+    "--disable-gpu",
+    "--disable-software-rasterizer",
+    "--disable-dev-shm-usage",
+    "--renderer-process-limit=1",
+    "--js-flags=--max-old-space-size=256",
+]
+
+
 def scrape_defi_positions_batch(addresses: list[str]) -> dict[str, dict]:
     """
     Scrape DeFi positions + token balances for multiple addresses in one browser session.
@@ -33,7 +50,7 @@ def scrape_defi_positions_batch(addresses: list[str]) -> dict[str, dict]:
     """
     results: dict[str, dict] = {}
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(headless=True, args=_BROWSER_ARGS)
         try:
             for address in addresses:
                 results[address] = _scrape_one(browser, address)
@@ -45,44 +62,55 @@ def scrape_defi_positions_batch(addresses: list[str]) -> dict[str, dict]:
 def _scrape_one(browser: Browser, address: str) -> dict:
     """Returns {"protocols": [...], "tokens": [...]}"""
     url = get_service("okx_portfolio_url").format(address)
-    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    page = browser.new_page(viewport={"width": 1280, "height": 720})
+    page.route("**/*", lambda route: (
+        route.abort() if route.request.resource_type in _BLOCK_TYPES else route.continue_()
+    ))
     try:
-        page.goto(url, wait_until="networkidle", timeout=_GOTO_TIMEOUT)
+        page.goto(url, wait_until="domcontentloaded", timeout=_GOTO_TIMEOUT)
+
+        # 等待頁面主要內容渲染（assetAmount 或任何已知穩定 selector）
         try:
-            page.wait_for_selector("[class*=assetAmount]", timeout=_SELECTOR_TIMEOUT)
+            page.wait_for_selector("[class*=assetAmount], [class*=totalAsset], [class*=portfolioTotal]",
+                                   timeout=_SELECTOR_TIMEOUT)
         except PWTimeout:
             _log.warning("OKX portfolio 頁面載入逾時: %s", address[:10])
             return {"protocols": [], "tokens": []}
 
-        page.locator('.dashboard-tabs-pane:has-text("資產組合")').click()
-        page.wait_for_timeout(2000)
+        # 切到「資產組合」tab（頁面通常預設就在此，失敗也繼續）
+        try:
+            tab = page.get_by_role("tab", name="資產組合")
+            tab.wait_for(timeout=5000)
+            tab.click()
+            page.wait_for_timeout(1500)
+        except Exception:
+            pass
 
-        # Extract token balances from default (代幣) tab before switching to DeFi
+        # 幣種 sub-tab
         tokens: list[dict] = []
         try:
-            page.locator('.dashboard-tabs-pane-segmented:has-text("代幣")').click()
+            token_tab = page.get_by_role("tab", name="幣種")
+            token_tab.wait_for(timeout=8000)
+            token_tab.click()
             page.wait_for_timeout(1500)
-            tokens = _extract_tokens(page)
+            tokens = _extract_tokens(page.inner_text("body"))
         except Exception as e:
-            _log.debug("代幣頁解析失敗，嘗試直接從當前頁面擷取: %s", e)
-            try:
-                tokens = _extract_tokens(page)
-            except Exception:
-                pass
+            _log.warning("幣種頁解析失敗: %s", e)
 
         # Switch to DeFi tab
-        page.locator('.dashboard-tabs-pane-segmented:has-text("DeFi")').click()
-        page.wait_for_timeout(_DEFI_WAIT_MS)
-
         try:
-            page.wait_for_selector(".dashboard-table-row", timeout=8000)
-        except PWTimeout:
-            _log.debug("DeFi table row selector 逾時，繼續嘗試解析")
+            defi_tab = page.get_by_role("tab", name="DeFi")
+            defi_tab.wait_for(timeout=8000)
+            defi_tab.click()
+        except Exception as e:
+            _log.warning("DeFi tab 點擊失敗: %s", e)
+            return {"protocols": [], "tokens": tokens}
 
+        page.wait_for_timeout(_DEFI_WAIT_MS)
         page.evaluate("window.scrollTo(0, 300)")
         page.wait_for_timeout(500)
 
-        protocols = _extract_protocols(page)
+        protocols = _extract_protocols(page.inner_text("body"))
         return {"protocols": protocols, "tokens": tokens}
     finally:
         page.close()
@@ -97,12 +125,11 @@ def _parse_usd(text: str) -> float:
         return 0.0
 
 
-def _extract_tokens(page) -> list[dict]:
+def _extract_tokens(body: str) -> list[dict]:
     """
     Parse wallet token balances from the OKX Portfolio token tab.
     Expected text pattern per token: chain_name → symbol → amount → $usd
     """
-    body = page.inner_text("body")
     lines = [l.strip() for l in body.split("\n") if l.strip()]
 
     tokens: list[dict] = []
@@ -142,8 +169,7 @@ def _extract_tokens(page) -> list[dict]:
     return sorted(tokens, key=lambda x: x["usd_value"], reverse=True)
 
 
-def _extract_protocols(page) -> list[dict]:
-    body = page.inner_text("body")
+def _extract_protocols(body: str) -> list[dict]:
     lines = [l.strip() for l in body.split("\n") if l.strip()]
 
     detail_start = next(
